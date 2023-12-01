@@ -1,5 +1,5 @@
 open Aoc
 
 let () =
-  let result = Dayone.part_one 1 in
-  print_endline @@ string_of_int result
+  let arg: string = Array.get (Sys.argv) 1 in
+  Dayone.part_one arg |> print_int |> print_newline
