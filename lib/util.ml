@@ -1,7 +1,8 @@
 type 'a pattern_assoc = string * 'a
 
-type 'a parse_result = 'a * string
-
+let get_opt = function
+  | Some x -> x
+  | None -> failwith "get_opt failed (got none)"
 (* returns a lazy sequence of lines from a filename *)
 let seq_of_filename (filename: string) : string Seq.t = 
   let input_line_opt chan = 
@@ -49,7 +50,6 @@ let rec find_prefix prefixes s = (* returns first match *)
   | (prefix, x) :: rest ->
     if String.starts_with ~prefix:prefix s then Some x
     else find_prefix rest s
-
 
 let rec find_suffix suffixes s = (* returns the last match *)
   match suffixes with
@@ -118,6 +118,21 @@ let parse_word_special input =
   in 
   aux 0
 
+let parse_whitespace input =
+  let len = String.length input in
+  if len = 0 then None else
+  let is_whitespace = function
+  | ' ' | '\t' | '\r' -> true
+  | _ -> false in
+  let rec aux i = 
+    match i with
+    | i when i = 0 && not (is_whitespace input.[i]) -> None 
+    | i when i >= len -> Some (String.sub input 0 i, "")
+    | i when not (is_whitespace input.[i]) -> Some (String.sub input 0 i, String.sub input i (len - i))
+    | i -> aux @@ i + 1
+  in 
+  aux 0
+
 let parse_int input =
   let len = String.length input in
   if len = 0 then None else
@@ -141,6 +156,15 @@ let parse_char input =
   if len = 0 then None
   else Some (input.[0], string_shrink_right input) 
 
-let slit_on_whitespace input =
-  input |> Seq.unfold parse_word_special
+let split_on_whitespace input =
+  let opt s =
+    match parse_word_special s with
+    | _ when String.length s = 0 -> None 
+    | None -> (match parse_whitespace s with
+      | None -> None
+      | Some (_, remaining) -> parse_word_special remaining
+      )
+    | x -> x
+  in
+  input |> Seq.unfold opt
 
