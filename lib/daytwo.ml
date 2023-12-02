@@ -57,13 +57,34 @@ let game_possible (g: game) (original: subgame) : bool =
     x.red <= original.red && x.green <= original.green && x.blue <= original.blue
   ) g.set
 
-let process infile = 
-  let lines = Util.seq_of_filename infile in
+let part_one lines =
   lines 
     |> Seq.filter_map (fun line -> 
       match (line |> parse_game) with
-    | g when game_possible g {red=12;green=13;blue=14} -> Some g.id
+      | g when game_possible g {red=12;green=13;blue=14} -> Some g.id
       | _ -> None
     )
     |> Seq.fold_left (fun sum id -> id + sum) 0
+
+let min_cubes (g: game) : subgame =
+  let aux acc x =
+    {
+      red=(Int.max acc.red x.red);
+      green=(Int.max acc.green x.green);
+      blue=(Int.max acc.blue x.blue)
+    }
+  in
+  List.fold_left aux {red=0;green=0;blue=0} g.set
+
+let part_two lines =
+  lines
+    |> Seq.fold_left (fun sum line -> 
+      let cubes = line |> parse_game |> min_cubes in
+      sum + (cubes.red * cubes.green * cubes.blue)
+    ) 0
+
+let process infile = 
+  let lines = Util.seq_of_filename infile in
+  part_two lines
+
 
