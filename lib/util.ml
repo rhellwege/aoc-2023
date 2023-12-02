@@ -1,5 +1,7 @@
 type 'a pattern_assoc = string * 'a
 
+type 'a parse_result = 'a * string
+
 (* returns a lazy sequence of lines from a filename *)
 let seq_of_filename (filename: string) : string Seq.t = 
   let input_line_opt chan = 
@@ -38,11 +40,8 @@ let reverse_string input =
    substrings first starting with the whole string, then getting smaller
    towards the ending character 
 *)
-let rec substrings_fold_left (fn: ('acc -> string -> 'acc)) (acc: 'acc) (input: string) : 'acc =
-  let len = String.length input in 
-  if len = 0 then acc
-  else 
-    substrings_fold_left fn (fn acc input) (string_shrink_right input)
+let substrings_fold_left (fn: ('acc -> string -> 'acc)) (acc: 'acc) (input: string) : 'acc =
+  seq_of_substrings_left input |> Seq.fold_left fn acc
 
 let rec find_prefix prefixes s = (* returns first match *)
   match prefixes with
@@ -50,6 +49,7 @@ let rec find_prefix prefixes s = (* returns first match *)
   | (prefix, x) :: rest ->
     if String.starts_with ~prefix:prefix s then Some x
     else find_prefix rest s
+
 
 let rec find_suffix suffixes s = (* returns the last match *)
   match suffixes with
@@ -79,3 +79,68 @@ let rec suffix_find_map (mapping: (string -> 'b option)) (input: string) : 'b op
   match mapping input with
   | None -> suffix_find_map mapping (string_shrink_left input)
   | x -> x
+
+let expect_string pattern input =
+  let len = String.length input in
+  let pattern_len = String.length pattern in
+  if String.starts_with ~prefix:pattern input then
+    Some (pattern, String.sub input pattern_len (len - pattern_len)) 
+  else
+    None
+
+let parse_word input = 
+  let len = String.length input in
+  if len = 0 then None else
+  let is_alpha = function
+  | 'A'..'Z' | 'a'..'z' -> true
+  | _ -> false in
+  let rec aux i = 
+    match i with
+    | i when i = 0 && not (is_alpha input.[i]) -> None
+    | i when i >= len -> Some (String.sub input 0 i, "")
+    | i when not (is_alpha input.[i]) -> Some (String.sub input 0 i, String.sub input i (len - i))
+    | i -> aux @@ i + 1
+  in 
+  aux 0
+
+let parse_word_special input = 
+  let len = String.length input in
+  if len = 0 then None else
+  let is_alpha = function
+  | ' ' | '\t' | '\r' -> false
+  | _ -> true in
+  let rec aux i = 
+    match i with
+    | i when i = 0 && not (is_alpha input.[i]) -> None 
+    | i when i >= len -> Some (String.sub input 0 i, "")
+    | i when not (is_alpha input.[i]) -> Some (String.sub input 0 i, String.sub input i (len - i))
+    | i -> aux @@ i + 1
+  in 
+  aux 0
+
+let parse_int input =
+  let len = String.length input in
+  if len = 0 then None else
+  let is_digit = function
+  | '0'..'9' -> true
+  | _ -> false in
+  let rec aux i = 
+    match i with
+    | i when i = 0 && not (is_digit input.[i]) -> 
+      None
+    | i when i >= len -> 
+      Some (int_of_string (String.sub input 0 i), "")
+    | i when not (is_digit input.[i]) -> 
+      Some (int_of_string (String.sub input 0 i), String.sub input i (len - i))
+    | i -> aux @@ i + 1
+  in 
+  aux 0
+
+let parse_char input =
+  let len = String.length input in
+  if len = 0 then None
+  else Some (input.[0], string_shrink_right input) 
+
+let slit_on_whitespace input =
+  input |> Seq.unfold parse_word_special
+
