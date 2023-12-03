@@ -1,3 +1,15 @@
+(* MONAD *)
+let bind (m: 'a option) (f: 'a -> 'b option) : 'b option =
+  match m with
+  | None -> None
+  | Some x -> f x
+
+let ( >>= ) = bind
+let ( let* ) = ( >>= )
+let return x = Some x
+(* let ( >> ) f g x = *)
+  (* x |> f |> g *)
+
 type 'a pattern_assoc = string * 'a
 
 let get_opt = function
