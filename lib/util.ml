@@ -23,6 +23,8 @@ let seq_of_filename (filename: string) : string Seq.t =
   in
   filename |> open_in |> Seq.unfold input_line_opt
 
+(* let slurp *)
+
 (* The direction (left or right) refers to the direction the list is shrinking *)
 let string_shrink_right input =
   let len = String.length input in
