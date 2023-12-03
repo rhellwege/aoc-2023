@@ -26,17 +26,19 @@ module Sv = struct
   let copy sv =
     String.sub sv.content sv.start sv.len
 
-  let get sv i = 
+  let get i sv = 
     if i < 0 || i >= sv.len then failwith "Out of bounds" else
     sv.content.[sv.start + i]
 
+  let get_unsafe i sv =
+    sv.content.[sv.start + i]
 
   let starts_with (prefix: string) sv : bool =
     let str_len = String.length prefix in
     let rec aux i =
       if i >= str_len then true else
       if i >= sv.len then false else
-      if (get sv i) <> (String.get prefix i) then false else
+      if (get i sv) <> (String.get prefix i) then false else
       aux @@ i + 1
     in aux 0
 
@@ -44,7 +46,7 @@ module Sv = struct
     let rec aux i =
       if i >= prefix.len then true else
       if i >= sv.len then false else
-      if (get sv i) <> (get prefix i) then false else
+      if (get i sv ) <> (get i prefix) then false else
       aux @@ i + 1
     in aux 0
 
@@ -58,79 +60,64 @@ module Sv = struct
     in
     Seq.unfold opt 0
 
-  let chop sv i : (t * t) =
+  let chop i sv: (t * t) =
     if i < 0 || i > sv.len then failwith "Out of bounds" else
     ({sv with len = i;}, {sv with start = sv.start + i; len = sv.len - i})
 
   let expect_string (pattern: string) sv =
     let pattern_len = String.length pattern in
     if starts_with pattern sv then
-      Some (chop sv pattern_len) 
+      Some (chop pattern_len sv) 
     else
       None
 
   let expect_sv (pattern: t) sv =
     if starts_with_sv sv pattern then
-      Some (chop sv pattern.len) 
+      Some (chop pattern.len sv) 
     else
       None
 
   let parse_until (f: char -> bool) sv : (t * t) option =
+    if sv.len = 0 then None else
     let rec aux i =
       if i >= sv.len then None else
-      if get sv i |> f then return @@ chop sv i
+      if get i sv |> f then return @@ chop i sv
       else aux @@ i + 1
-    in
-    aux 0
+    in aux 0
+    
+  let parse_while (f: char -> bool) sv : (t * t) option =
+    if sv.len = 0 then None else
+    let rec aux i =
+      match i with
+      | i when i = 0 && not (f (get i sv)) -> None
+      | i when i >= sv.len -> return @@ chop i sv
+      | i when not (f (get i sv)) -> return @@ chop i sv
+      | i -> aux @@ i + 1
+    in aux 0
 
   let parse_word sv = 
-    if sv.len = 0 then None else
     let is_alpha = function
     | 'A'..'Z' | 'a'..'z' -> true
     | _ -> false in
-    let rec aux i = 
-      match i with
-      | i when i = 0 && not (is_alpha @@ get sv i) -> None
-      | i when i >= sv.len -> return @@ chop sv i 
-      | i when not (is_alpha @@ get sv i) -> return @@ chop sv i
-      | i -> aux @@ i + 1
-    in 
-    aux 0
+    parse_while is_alpha sv
 
   let parse_word_special sv = 
-    if sv.len = 0 then None else
     let is_alpha = function
     | ' ' | '\t' | '\r' -> false
     | _ -> true in
-    let rec aux i = 
-      match i with
-      | i when i = 0 && not (is_alpha @@ get sv i) -> None 
-      | i when i >= sv.len -> return @@ chop sv i
-      | i when not (is_alpha @@ get sv i) -> return @@ chop sv i
-      | i -> aux @@ i + 1
-    in 
-    aux 0
+    parse_while is_alpha sv
 
   let parse_whitespace sv = 
-    if sv.len = 0 then None else
     let is_whitespace = function
     | ' ' | '\t' | '\r' -> true
     | _ -> false in
-    let rec aux i = 
-      match i with
-      | i when i = 0 && not (is_whitespace @@ get sv i) -> None 
-      | i when i >= sv.len -> return @@ chop sv i
-      | i when not (is_whitespace @@ get sv i) -> return @@ chop sv i
-      | i -> aux @@ i + 1
-    in 
-    aux 0
+    parse_while is_whitespace sv
 
   let parse_int_sv sv =
-    if sv.len = 0 then None else
-    let is_not_digit = function
-    | '0'..'9' -> false
-    | _ -> true in
-    parse_until is_not_digit sv
+    let is_digit = function
+    | '0'..'9' -> true
+    | _ -> false in
+    parse_while is_digit sv
 
   let parse_int sv =
     let* (l, r) = parse_int_sv sv in
@@ -152,10 +139,20 @@ module Sv = struct
     let is_c x = x = c in
     None <> parse_until is_c sv
 
-  let force sv start len =
-    let c_len = String.length sv.content in
-    if len < 0 || start < 0 || start + len > c_len then failwith "cannot force out of bounds." else
-    {sv with start; end }
+  (* keeps consuming character by character until parser returns Some y or the parser runs out of characters *)
+  let parse_first (parser: t -> ('a * t) option) sv =
+    let rec aux sv' =
+      if sv'.len <= 0 then None else
+      match parser sv' with
+      | None -> aux {sv' with start=sv'.start + 1; len=sv'.len - 1}
+      | x -> x
+    in aux sv
+
+  let peek_left sv =
+    get_unsafe ~-1 sv
+
+  let peek_right sv =
+    get_unsafe sv.len sv
 
   (* let split_on_delim sv (delim: string) = *)
     (* let opt rest = *)
@@ -165,11 +162,28 @@ module Sv = struct
     (* in *)
     (* failwith "unimplemented" *)
   (* keeps parsing until f returns true *)
-
+  (* let peek_left =  *)
+  (**)
   module Infix = struct
-    let ( ~~> ) (x: ('a * 'b) option) (f: 'b -> ('c * 'b) option) : ('c * 'b) option =
-      let* (_, b) = x in
-      f b
+    let ( >:> ) (x: (t * t) option) (f: t -> 'a) : 'a =
+      match x with
+      | None -> failwith "cannot unbox None"
+      | Some (x, _) -> f x
+      
+    let ( >~> ) (x: ('a * t) option) (f: t -> ('b * t) option) : ('b * t) option =
+      match x with
+      | None -> None
+      | Some (_, rest) -> f rest
+
+    let ( <~< ) (x: ('a * t) option) (f: t -> ('b * t) option) : ('a * t) option =
+      match x with
+      | None -> None
+      | Some (a, rest) -> 
+        let* (_, rest) = f rest in
+        return (a, rest)
+
+    let ( >>/ ) x f =
+      of_string x |> f
   end
 
 end
