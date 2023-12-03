@@ -84,8 +84,8 @@ let part_two lines =
       (* The right side of >>= is a normal function that returns option, but expects a non option as input *)
       (* The left side returns option, but >>= handles this for us *)
       let ans = 
-        let* cubes = line |> parse_game >>= min_cubes in
-        return @@ sum + (cubes.red * cubes.green * cubes.blue)
+        let* min_subgame = line |> parse_game >>= min_cubes in
+        return @@ sum + (min_subgame.red * min_subgame.green * min_subgame.blue)
       in get_opt ans
     ) 0
 
