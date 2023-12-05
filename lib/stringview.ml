@@ -8,6 +8,9 @@ module Sv = struct
     start: int;
     len: int;
   }
+  type 'a parsed = ('a * t) option
+  type almost_parsed = t parsed
+  type 'a parser = (t -> 'a parsed)
 
   let of_string content =
     {
@@ -74,13 +77,13 @@ module Sv = struct
   let expect_string (pattern: string) sv =
     let pattern_len = String.length pattern in
     if starts_with pattern sv then
-      Some (chop pattern_len sv) 
+      chop pattern_len sv
     else
       None
 
   let expect_sv (pattern: t) sv =
     if starts_with_sv sv pattern then
-      Some (chop pattern.len sv) 
+      chop pattern.len sv
     else
       None
 
@@ -146,24 +149,21 @@ module Sv = struct
     None <> parse_until f sv
 
   (* keeps consuming character by character until parser returns Some y or the parser runs out of characters *)
-  let parse_first (parser: t -> ('a * t) option) sv =
+  let parse_first (p: 'a parser) sv =
     let rec aux sv' =
       if sv'.len <= 0 then None else
-      match parser sv' with
+      match p sv' with
       | None -> aux {sv' with start=sv'.start + 1; len=sv'.len - 1}
       | x -> x
     in aux sv
 
-  let parse_except (parser: t -> ('a * t) option) sv =
-    let rec aux sv' =
-      if sv'.len <= 0 then None else
-      match parser sv' with
-      | None -> aux {sv' with start=sv'.start + 1; len=sv'.len - 1}
-      | _ -> 
-        let* (l, r) = chop (sv'.start - sv.start) sv in
-        if l.len = 0 then None else
-        return (l, r)
-    in aux sv
+  (* parse everything up to the parser pattern, then silently consume the parsed content *)
+  let parse_except (p: 'a parser) sv =
+    if sv.len = 0 then None else
+    match parse_first p sv with
+    | None -> return (sv, {sv with start=sv.start+sv.len; len=0})
+    | Some (l, r) -> 
+      return ({sv with len=l.start-sv.start}, r)
 
   let peek_left sv =
     get_unsafe ~-1 sv
@@ -171,52 +171,60 @@ module Sv = struct
   let peek_right sv =
     get_unsafe sv.len sv
 
-  let parse_sequence (parser: t -> ('a * t) option) sv =
+  let parse_sequence (p: 'a parser) sv =
     let opt sv' =
-      match parse_first parser sv' with
+      match parse_first p sv' with
       | None -> None
       | Some (a, rest) -> Some (a, rest)
     in
     sv |> Seq.unfold opt
 
-  let split_with (parser: t -> ('a * t) option) sv =
+  let split_with (p: 'a parser) sv =
     let opt sv' =
-      match parse_first (parse_except parser) sv' with
+      match  (parse_except p) sv' with
       | None -> None
-      | Some (a, rest) -> Some (a, rest)
+      | Some (a, rest) -> 
+        if a.len = 0 then (parse_except p) rest else
+        Some (a, rest)
     in
     sv |> Seq.unfold opt
 
+  let split_on_delim (delim: string) sv =
+    split_with (expect_string delim) sv
 
-  (* let split_on_delim sv (delim: string) = *)
-    (* let opt rest = *)
-    (*   if rest.len = 0 then None else *)
-    (*   match expect_string delim sv with *)
-    (*   | Some (_, _) -> None *)
-    (* in *)
+  (* returns the first succesful parse, if all fail, return none *)
+  let parse_either (pl: 'a parser list) sv =
+    pl |> List.find_map (fun f -> f sv)
 
-    (* failwith "unimplemented" *)
-  (* keeps parsing until f returns true *)
-  (* let peek_left =  *)
-  (**)
   module Infix = struct
-    let ( >:> ) (x: (t * t) option) (f: t -> 'a) : 'a =
+    (* if x is a t * t parser result, pass the parsed result to the next parser *)
+    let ( >:> ) (x: almost_parsed) (f: t -> 'a) : 'a =
       match x with
       | None -> failwith "cannot unbox none" 
       | Some (x, _) -> f x
       
-    let ( >~> ) (x: ('a * t) option) (f: t -> ('b * t) option) : ('b * t) option =
+    (* discard the value of x and apply the rest to f and return the result of f *)
+    let ( >~> ) (x: 'a parsed) (f: 'b parser) : 'b parsed =
       match x with
       | None -> None
       | Some (_, rest) -> f rest
 
-    let ( <~< ) (x: ('a * t) option) (f: t -> ('b * t) option) : ('a * t) option =
+    (* given a parser result, apply the rest with f and return the result of x *)
+    let ( <~< ) (x: 'a parsed) (f: 'b parser) : 'a parsed =
       match x with
       | None -> None
       | Some (a, rest) -> 
         let* (_, rest) = f rest in
         return (a, rest)
 
+    (* parser combinator operator (takes two parsers, ignores the result of the first and applies the second with the rest of the first *)
+    let ( >|> ) (f: 'a parser) (g: 'b parser) : 'b parser =
+      (fun x -> x |> f >~> g)
+
+    let ( <|< ) (f: 'a parser) (g: 'b parser) : 'a parser =
+      (fun x -> x |> f <~< g)
+
+    (* convert string to stringview *)
     let ( >>/ ) x f =
       of_string x |> f
   end
