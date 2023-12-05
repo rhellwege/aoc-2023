@@ -226,10 +226,10 @@ module Sv = struct
   let parse_either (pl: 'a parser list) sv =
     pl |> List.find_map (fun f -> f sv)
 
-  let parse_end (f: t parser) (g: t parser) : t parser =
+  let parse_and (f: t parser) (g: t parser) : t parser =
     (fun x -> 
       let* (l0, r0) = f x in
-      let* (l1, _) = g l0 in
+      let* (_, _) = g l0 in
       return (l0, r0)
     )
 
@@ -254,7 +254,7 @@ module Sv = struct
 
   module Infix = struct
     (* if x is a t * t parser result, pass the parsed result to the next parser *)
-    let ( >:> ) (x: (t * t)) (f: t -> 'a) : 'a option =
+    let ( >:> ) (x: (t * t) option) (f: t -> 'a) : 'a option =
       match x with
       | None -> None
       | Some (x, _) -> return @@ f x
@@ -265,7 +265,7 @@ module Sv = struct
 
     (* given a parser result, apply the rest with f and return the result of x *)
     let ( <~< ) (x: 'a parsed) (f: 'b parser) : 'a parsed =
-      parse_discard_right
+      parse_discard_right x f
 
     (* combines the results of two parsers, they must be almost parsers *)
     let ( >+> ) (f: t parser) (g: t parser) : t parser =
