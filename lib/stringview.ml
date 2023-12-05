@@ -158,7 +158,7 @@ module Sv = struct
     in aux sv
 
   (* parse everything up to the parser pattern, then silently consume the parsed content *)
-  let parse_except (p: 'a parser) sv =
+  let parse_except (p: t parser) sv =
     if sv.len = 0 then None else
     match parse_first p sv with
     | None -> return (sv, {sv with start=sv.start+sv.len; len=0})
@@ -217,7 +217,14 @@ module Sv = struct
         let* (_, rest) = f rest in
         return (a, rest)
 
-    (* parser combinator operator (takes two parsers, ignores the result of the first and applies the second with the rest of the first *)
+    (* combines the results of two parsers, they must be almost parsers *)
+    let ( >+> ) (f: t parser) (g: t parser) : t parser =
+      (fun x -> 
+        let* (l0, r0) = f x in
+        let* (l1, r1) = g r0 in
+        return ({l0 with len=l0.len+l1.len}, r1)
+      )
+
     let ( >|> ) (f: 'a parser) (g: 'b parser) : 'b parser =
       (fun x -> x |> f >~> g)
 
