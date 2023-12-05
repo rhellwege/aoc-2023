@@ -176,7 +176,8 @@ module Sv = struct
   (* keeps consuming character by character until parser returns Some y or the parser runs out of characters *)
   let parse_last (p: 'a parser) sv =
     let rec aux sv' =
-      print_endline @@ copy sv';
+      if sv'.len <= 0 then None else
+      (* print_endline @@ copy sv'; *)
       match parse_first p sv' with
       | None -> None
       | Some (x, rest) -> (
@@ -225,42 +226,54 @@ module Sv = struct
   let parse_either (pl: 'a parser list) sv =
     pl |> List.find_map (fun f -> f sv)
 
+  let parse_end (f: t parser) (g: t parser) : t parser =
+    (fun x -> 
+      let* (l0, r0) = f x in
+      let* (l1, _) = g l0 in
+      return (l0, r0)
+    )
+
+  let parse_combine (f: t parser) (g: t parser) : t parser =
+    (fun x -> 
+      let* (l0, r0) = f x in
+      let* (l1, r1) = g r0 in
+      return ({l0 with len=l0.len+l1.len}, r1)
+    )
+
+  let parse_discard_left (x: 'a parsed) (f: 'b parser) : 'b parsed =
+    match x with
+    | None -> None
+    | Some (_, rest) -> f rest
+
+  let parse_discard_right (x: 'a parsed) (f: 'b parser) : 'a parsed =
+    match x with
+    | None -> None
+    | Some (a, rest) -> 
+      let* (_, rest) = f rest in
+      return (a, rest)
+
   module Infix = struct
     (* if x is a t * t parser result, pass the parsed result to the next parser *)
-    let ( >:> ) (x: almost_parsed) (f: t -> 'a) : 'a option =
+    let ( >:> ) (x: (t * t)) (f: t -> 'a) : 'a option =
       match x with
       | None -> None
       | Some (x, _) -> return @@ f x
       
     (* discard the value of x and apply the rest to f and return the result of f *)
     let ( >~> ) (x: 'a parsed) (f: 'b parser) : 'b parsed =
-      match x with
-      | None -> None
-      | Some (_, rest) -> f rest
+      parse_discard_left x f
 
     (* given a parser result, apply the rest with f and return the result of x *)
     let ( <~< ) (x: 'a parsed) (f: 'b parser) : 'a parsed =
-      match x with
-      | None -> None
-      | Some (a, rest) -> 
-        let* (_, rest) = f rest in
-        return (a, rest)
+      parse_discard_right
 
     (* combines the results of two parsers, they must be almost parsers *)
     let ( >+> ) (f: t parser) (g: t parser) : t parser =
-      (fun x -> 
-        let* (l0, r0) = f x in
-        let* (l1, r1) = g r0 in
-        return ({l0 with len=l0.len+l1.len}, r1)
-      )
+      parse_combine f g
 
     (* applies the left side of f to g then returns the left of g and the remaining of f *)
     let ( >&> ) (f: t parser) (g: t parser) : t parser =
-      (fun x -> 
-        let* (l0, r0) = f x in
-        let* (l1, _) = g l0 in
-        return ({l0 with len=l0.len+l1.len}, r0)
-      )
+      parse_and f g
 
     let ( >|> ) (f: 'a parser) (g: 'b parser) : 'b parser =
       (fun x -> x |> f >~> g)
