@@ -56,9 +56,25 @@ module Sv = struct
     let rec aux i =
       if i >= prefix.len then true else
       if i >= sv.len then false else
-      if (get i sv ) <> (get i prefix) then false else
+      if (get_opt @@ get i sv ) <> (get_opt @@ get i prefix) then false else
       aux @@ i + 1
     in aux 0
+
+  let ends_with (suffix: string) sv : bool =
+    let str_len = String.length suffix in
+    let rec aux i =
+      if i < 0 then true else
+      if (get_opt @@ get i sv) <> (String.get suffix i) then false else
+      aux @@ i - 1
+    in aux @@ str_len - 1
+
+  let ends_with_sv (suffix: t) sv : bool =
+    let str_len = suffix.len in
+    let rec aux i =
+      if i < 0 then true else
+      if (get_opt @@ get i sv) <> (get_opt @@ get i suffix) then false else
+      aux @@ i - 1
+    in aux @@ str_len - 1
 
   let eq sv other =
     sv.len = other.len && starts_with_sv sv other
@@ -157,6 +173,19 @@ module Sv = struct
       | x -> x
     in aux sv
 
+  (* keeps consuming character by character until parser returns Some y or the parser runs out of characters *)
+  let parse_last (p: 'a parser) sv =
+    let rec aux sv' =
+      print_endline @@ copy sv';
+      match parse_first p sv' with
+      | None -> None
+      | Some (x, rest) -> (
+        match parse_first p rest with
+        | None -> return (x, rest)
+        | Some _ -> aux rest
+        )
+    in aux sv
+
   (* parse everything up to the parser pattern, then silently consume the parsed content *)
   let parse_except (p: t parser) sv =
     if sv.len = 0 then None else
@@ -198,10 +227,10 @@ module Sv = struct
 
   module Infix = struct
     (* if x is a t * t parser result, pass the parsed result to the next parser *)
-    let ( >:> ) (x: almost_parsed) (f: t -> 'a) : 'a =
+    let ( >:> ) (x: almost_parsed) (f: t -> 'a) : 'a option =
       match x with
-      | None -> failwith "cannot unbox none" 
-      | Some (x, _) -> f x
+      | None -> None
+      | Some (x, _) -> return @@ f x
       
     (* discard the value of x and apply the rest to f and return the result of f *)
     let ( >~> ) (x: 'a parsed) (f: 'b parser) : 'b parsed =
@@ -223,6 +252,14 @@ module Sv = struct
         let* (l0, r0) = f x in
         let* (l1, r1) = g r0 in
         return ({l0 with len=l0.len+l1.len}, r1)
+      )
+
+    (* applies the left side of f to g then returns the left of g and the remaining of f *)
+    let ( >&> ) (f: t parser) (g: t parser) : t parser =
+      (fun x -> 
+        let* (l0, r0) = f x in
+        let* (l1, _) = g l0 in
+        return ({l0 with len=l0.len+l1.len}, r0)
       )
 
     let ( >|> ) (f: 'a parser) (g: 'b parser) : 'b parser =
