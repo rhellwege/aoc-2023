@@ -4,8 +4,20 @@ let bind (m: 'a option) (f: 'a -> 'b option) : 'b option =
   | None -> None
   | Some x -> f x
 
+let upgrade (w: 'a option) (f: 'a -> 'b) : 'b option =
+  match w with
+  | None -> None
+  | Some x -> Some (f x);;
+
 let ( >>= ) = bind
+let ( >>>=  ) = upgrade
 let ( let* ) = ( >>= )
+let ( let+ ) = ( >>>= )
+
+let ( ~= ) = function
+  | None -> false
+  | Some x -> x
+
 let return x = Some x
 (* let ( >> ) f g x = *)
   (* x |> f |> g *)
