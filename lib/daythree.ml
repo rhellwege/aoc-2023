@@ -15,7 +15,6 @@ let grow_sv (sv: Sv.t) : Sv.t =
   let left_extension = Int.min start 1 in
   let right_extension = Int.min (str_len - (sv.start + sv.len)) 1 in
   let new_len = sv.len + left_extension + right_extension in
-
   { sv with
     start = start;
     len = new_len;
@@ -38,7 +37,8 @@ let count_int (top: Sv.t option) (bottom: Sv.t option) (sv: Sv.t) : int option =
   if ~=right then success else
   None
 
-let calc_window top bottom middle =
+(* gets called for each line *)
+let calc_window_1 top bottom middle =
   let ints = Sv.parse_sequence Sv.parse_int_sv middle |> Seq.filter_map (fun x ->
     let* counted = count_int top bottom x in
     return counted
@@ -51,15 +51,38 @@ let part_one lines =
   let rec aux (sum, top, middle) rest =
     let bottom = Seq.uncons rest in
     match bottom with
-    | None -> sum + calc_window top None middle
+    | None -> sum + calc_window_1 top None middle
     | Some (bottom, rest) ->
-      let lsum = calc_window top (Some bottom) middle in
+      let lsum = calc_window_1 top (Some bottom) middle in
       aux (sum + lsum, Some middle, bottom) rest
   in 
   let mr = Seq.uncons lines in
   match mr with
   | None -> 0
   | Some (middle, rest) -> aux (0, None, middle) rest
+
+(* let calc_window_2 top bottom middle = *)
+(*   (* let stars = Sv.parse_sequence (Sv.expect_string "*") middle |> Seq.filter_map (fun x -> *) *)
+(*   (*   let* counted = count_int top bottom x in *) *)
+(*   (*   return counted *) *)
+(*   (* ) in *) *)
+(*   1 *)
+
+(* let part_two lines = *)
+(*   let lines = lines |> Seq.map Sv.of_string in *)
+(*   let rec aux (sum, top, middle) rest = *)
+(*     let bottom = Seq.uncons rest in *)
+(*     match bottom with *)
+(*     | None -> sum + calc_window_2 top None middle *)
+(*     | Some (bottom, rest) -> *)
+(*       let lsum = calc_window_2 top (Some bottom) middle in *)
+(*       aux (sum + lsum, Some middle, bottom) rest *)
+(*   in  *)
+(*   let mr = Seq.uncons lines in *)
+(*   match mr with *)
+(*   | None -> 0 *)
+(*   | Some (middle, rest) -> aux (0, None, middle) rest *)
+
   
 let process infile = 
   let lines = Util.seq_of_filename infile in

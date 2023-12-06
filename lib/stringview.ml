@@ -103,6 +103,7 @@ module Sv = struct
     else
       None
 
+  (* TODO: make this accept a parser to be more composable *)
   let parse_until (f: char -> bool) sv : (t * t) option =
     if sv.len = 0 then None else
     let rec aux i =
@@ -111,6 +112,7 @@ module Sv = struct
       else aux @@ i + 1
     in aux 0
     
+  (* TODO: make this accept a parser to be more composable *)
   let parse_while (f: char -> bool) sv : (t * t) option =
     if sv.len = 0 then None else
     let rec aux i =
@@ -120,6 +122,31 @@ module Sv = struct
       | i when not (f (get i sv |> get_opt)) -> chop i sv
       | i -> aux @@ i + 1
     in aux 0
+
+  (* goes before t.start *)
+  let grow_while_left (f: char -> bool) sv =
+    let rec aux i =
+      if ~=(get_unsafe i sv >>>= f) then aux (i-1) else
+      let len = ~-i + sv.len - 1 in
+      let start = Int.max 0 (sv.start+i) in
+        return ({sv with start=start; len=len}, {sv with start=start+len; len=String.length sv.content - (start + len)})
+    in aux ~-1
+  (* breaks out of the confines of sv to search for the largest possible sequence *)
+  (* example: 12-3-45 -> -12345- *)
+  (* will never shrink, will only grow *)
+  let grow_while (f: char -> bool) sv =
+    if sv.len = 0 then None else
+    let rec aux i =
+      match i with
+      | i when i = 0 && not (f (get i sv |> get_opt)) -> None
+      | i when i >= sv.len -> chop i sv
+      | i when not (f (get i sv |> get_opt)) -> chop i sv
+      | i -> aux @@ i + 1
+    in aux 0
+
+  let parse_char sv = 
+    let* (l, r) = chop 1 sv in
+    return (l.content.[l.start], r)
 
   let parse_word sv = 
     let is_alpha = function
